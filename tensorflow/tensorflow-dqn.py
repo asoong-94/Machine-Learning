@@ -94,6 +94,110 @@ class Estimator():
 		gather_indices = tf.range(batch_size) * tf.shape(self.predictions)[1] + self.actions_pl
 		self.action_predictions = tf.gather(tf.reshape(self.predictions, [-1]), gather_indices)
 
+		# calculate loss 
+		# mean of all the differences 
+		self.losses = tf.squared_difference(self.y_pl, self.action_predictions)
+		self.loss = tf.reduce_mean(self.losses)
+
+		# optimizer parameters from original paper 	
+		self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
+		self.train_op = self.optimizer.minimize(self.loss, global_step=tf.contrib.framework.get_global_step())
+
+
+		# summaries for tensorboard 
+		# visual learning
+		self.summaries = tf.summary.merge([
+			tf.summary.scalar("loss", self.loss),
+			tf.summary.histogram("lost_hist", self.losses),
+			tf.summary.histogram("q_values_hist", self.predictions), 
+			# max q value is the max value from predictions
+			tf.summary.scalar("max_q_value", tf.reduce_max(self.predictions))
+			])
+
+	def predict(self, sess, s):
+		"""
+		predict action value 
+
+		Args:
+			sess: tf session 
+			s: State inpuf of shape [batch_size, 4, 160, 160, 3]
+
+		Returns:
+			Tensor of shape [batch_size, NUM_VALID_ACTIONS] containing estimated action value
+		"""
+		return sess.run(self.predictions, feed_dict={self.X_pl : s})
+
+
+	def update(self, sess, s, a, y):
+		"""
+		update the estimator toward given targets 
+		Args:
+			tf session 
+			s: state input of shape [batch_size, 4, 160, 160, 3]
+			a: chosen action of shape [batch_size]
+			y: targets of shape [batch_size]
+
+		Returns:
+			calculated loss on the batch 
+		"""
+		feed_dict = { self.X_pl : s, self.y_pl : y, self.actions_pl : a}
+		summaries, global_step, _, loss = sess.run(
+			[self.summaries, tf.contrib.framework.get_global_step(), self.train_op, self.loss], feed_dict)
+
+		if self.summary_writer:
+			self.summar_writer.add_summary(summaires, global_step)
+
+		return loss
+
+	# 2 networks that share same parameters in DQN algorithm 
+	# copy the paramters to target network on each, t, steps 
+	def copy_model_parameters(sess, estimator1, estimator2):
+		"""
+		copies model parameters of one estimator to another
+		Args:
+			tf session:
+			estimator1: estimator to copy from 
+			estimator2: estimator to copy to 
+		"""
+		e1_params = [t for t in tf.trainable_variables() if tf.name.startswith(estimator1.scope)]
+		e1_params = sorted(e1_params, key=lambda v: v.name)
+		e2_params = [t for t in tf.trainable_variables() if tf.name.startswith(estimator2.scope)]
+		e2_params = sorted(e2_params, key=lambda v: v.name)
+		
+		update_ops = []
+		for e1_v, e2_v in zip(e1_params, e2_params):
+			op = e2_v.assign(e1_v)
+			update_ops.append(op)
+
+		sess.run(update_ops)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
